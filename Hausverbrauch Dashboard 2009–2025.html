@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hausverbrauch Dashboard 2009–2025</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+
+<script>
+// Plugin: Summe über gestapelten Balken anzeigen
+const stackSumPlugin = {
+  id: 'stackSum',
+  afterDatasetsDraw(chart) {
+    const {ctx, data} = chart;
+    // Nur bei gestapelten Bar-Charts
+    const isStacked = chart.options?.scales?.x?.stacked || chart.options?.scales?.y?.stacked ||
+      (chart.data.datasets.some(ds => ds.stack));
+    if(!isStacked) return;
+    const meta0 = chart.getDatasetMeta(0);
+    if(!meta0 || meta0.type !== 'bar') return;
+
+    ctx.save();
+    ctx.font = '10px system-ui';
+    ctx.fillStyle = chart.options?.scales?.y?.ticks?.color || '#73726c';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+
+    const nPoints = data.labels.length;
+    for(let i = 0; i < nPoints; i++) {
+      let sum = 0;
+      let topY = Infinity;
+      chart.data.datasets.forEach((ds, di) => {
+        const meta = chart.getDatasetMeta(di);
+        if(meta.hidden) return;
+        const bar = meta.data[i];
+        if(!bar) return;
+        const val = ds.data[i];
+        if(val != null && !isNaN(val) && val > 0) {
+          sum += val;
+          if(bar.y < topY) topY = bar.y;
+        }
+      });
+      if(sum > 0 && topY < Infinity) {
+        const label = sum >= 1000 ? (sum/1000).toLocaleString('de',{maximumFractionDigits:1})+'k' : sum.toLocaleString('de');
+        ctx.fillText(label, meta0.data[i]?.x ?? 0, topY - 3);
+      }
+    }
+    ctx.restore();
+  }
+};
+Chart.register(stackSumPlugin);
+</script>
+
+<style>
+  :root{--bg:#f5f4f0;--bg2:#eceae4;--border:#d4d1c8;--text:#1a1917;--text2:#6b6860;--text3:#9c9a92;--info:#185FA5;--success:#1D9E75;--danger:#E24B4A;--radius:10px;}
+  @media(prefers-color-scheme:dark){:root{--bg:#1a1917;--bg2:#242320;--border:#3a3835;--text:#f0ede6;--text2:#9c9a92;--text3:#6b6860;}}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:20px;max-width:980px;margin:0 auto;}
+  h1{font-size:20px;font-weight:600;margin-bottom:4px;}
+  .subtitle{font-size:13px;color:var(--text2);margin-bottom:4px;}
+  .datasource{font-size:11px;color:var(--text3);margin-bottom:20px;}
+  .tabs{display:flex;gap:6px;margin-bottom:1.5rem;flex-wrap:wrap;}
+  .tab{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:7px 16px;font-size:13px;cursor:pointer;color:var(--text2);}
+  .tab:hover{background:var(--bg);}
+  .tab.active{background:var(--info);border-color:var(--info);color:#fff;font-weight:500;}
+  .tab-content{display:none;}.tab-content.active{display:block;}
+  .section-heading{font-size:15px;font-weight:600;margin-bottom:1rem;}
+  .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin-bottom:1.5rem;}
+  .metric{background:var(--bg2);border-radius:var(--radius);padding:12px 14px;}
+  .metric-label{font-size:12px;color:var(--text2);margin-bottom:4px;}
+  .metric-value{font-size:19px;font-weight:500;}
+  .metric-sub{font-size:11px;margin-top:2px;color:var(--text2);}
+  .pct-pos{color:var(--danger);}.pct-neg{color:var(--success);}
+  .pct-pos-inv{color:var(--success);}.pct-neg-inv{color:var(--danger);}
+  .chart-section{margin-bottom:1.8rem;}
+  .chart-title{font-size:13px;font-weight:500;margin-bottom:8px;}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:8px;font-size:12px;color:var(--text2);}
+  .legend span{display:flex;align-items:center;gap:4px;}
+  .leg-sq{width:10px;height:10px;border-radius:2px;display:inline-block;}
+  hr{border:none;border-top:1px solid var(--border);margin:2rem 0;}
+  .year-bar{display:flex;align-items:center;gap:10px;margin-bottom:1.2rem;flex-wrap:wrap;}
+  .year-bar label{font-size:13px;color:var(--text2);white-space:nowrap;}
+  .range-info{font-size:11px;color:var(--text3);}
+  .nav-btn{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:6px 14px;font-size:15px;cursor:pointer;color:var(--text);line-height:1;}
+  .nav-btn:hover{background:var(--bg);}.nav-btn:disabled{opacity:0.4;cursor:default;}
+  #year-input{width:90px;text-align:center;font-size:16px;font-weight:500;padding:6px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);-moz-appearance:textfield;}
+  #year-input::-webkit-inner-spin-button,#year-input::-webkit-outer-spin-button{-webkit-appearance:none;}
+  .eur-hl{border:1px solid var(--info);border-radius:var(--radius);}
+  .saldo-pos{border:1px solid var(--success)!important;}
+  .saldo-neg{border:1px solid var(--danger)!important;}
+  .est-metric{border:1px dashed var(--border)!important;opacity:0.85;}
+  .info-box{background:var(--bg2);border-left:3px solid var(--border);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--text2);margin-bottom:1.5rem;line-height:1.7;}
+  .info-box strong{color:var(--text);}
+
+  details.info-box{cursor:pointer;}
+  details.info-box summary{font-weight:600;color:var(--text);list-style:none;display:flex;align-items:center;gap:6px;}
+  details.info-box summary::before{content:'▶';font-size:9px;color:var(--text3);transition:transform 0.2s;}
+  details[open].info-box summary::before{content:'▶';transform:rotate(90deg);}
+  details.info-box summary::-webkit-details-marker{display:none;}
+
+</style>
+</head>
+<body>
+<h1>Hausverbrauch Dashboard</h1>
+<p class="subtitle">Strom · Solar · Heizung · Wasser · Erträge · Energiebilanz — 2009 bis 2025</p>
+<p class="datasource">Datenquelle: Verbrauch_seit_2008.xlsx · Zählerwechsel Strom 8.6.2020 · Zählerwechsel Wasser 2014 &amp; 2022 · Pellet-Ø 3.358 kg/J · Pellets 4,9 kWh/kg · Scheitholz Buche/Eiche 1.800 kWh/rm</p>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('detail')">Jahresdetail</button>
+  <button class="tab" onclick="showTab('verbrauch')">Verbrauch</button>
+  <button class="tab" onclick="showTab('solar')">Solar &amp; Erträge</button>
+  <button class="tab" onclick="showTab('heizung')">Heizung &amp; Brennstoffe</button>
+  <button class="tab" onclick="showTab('wasser')">Wasserkosten</button>
+  <button class="tab" onclick="showTab('bilanz')">Energiebilanz</button>
+</div>
+
+<!-- TAB VERBRAUCH -->
+<div id="tab-verbrauch" class="tab-content">
+  <p class="section-heading">Verbrauch 2009 – 2025</p>
+  <div class="chart-section">
+    <p class="chart-title">Strombezug &amp; Solarertrag gesamt p.a. (kWh)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#185FA5"></span>Strombezug (K)</span><span><span class="leg-sq" style="background:#BA7517"></span>Solarertrag gesamt (D+F+H)</span></div>
+    <div style="position:relative;width:100%;height:260px"><canvas id="g1"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Heizenergie p.a. (kWh)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#993C1D"></span>Fröling Pellets</span></div>
+    <div style="position:relative;width:100%;height:220px"><canvas id="g2"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Wasserverbrauch p.a. (m³)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#0F6E56"></span>Wasser</span></div>
+    <div style="position:relative;width:100%;height:200px"><canvas id="g3"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Gesamtverbrauch Haus p.a. (kWh) — Netzbezug + PV-Eigenverbrauch</p>
+    <div class="legend">
+      <span><span class="leg-sq" style="background:#185FA5"></span>Haus ohne ELW (R)</span>
+      <span><span class="leg-sq" style="background:#5C8EC9"></span>ELW (S)</span>
+      <span style="color:var(--text3);font-size:11px;font-style:italic">ab 2018 erfasst · ELW = Einliegerwohnung (Zwischenzähler Q) · Netzbezug K separat</span>
+    </div>
+    <div style="position:relative;width:100%;height:240px"><canvas id="g_elw"></canvas></div>
+  </div>
+</div>
+
+<!-- TAB SOLAR -->
+<div id="tab-solar" class="tab-content">
+  <p class="section-heading">Solar &amp; Erträge 2009 – 2025</p>
+  <div class="chart-section">
+    <p class="chart-title">Solarertrag nach Anlage p.a. (kWh)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#EF9F27"></span>Solar 1 (D)</span><span><span class="leg-sq" style="background:#BA7517"></span>e3dc (F)</span><span><span class="leg-sq" style="background:#633806"></span>Solvis (H)</span></div>
+    <div style="position:relative;width:100%;height:260px"><canvas id="g1b"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Erträge p.a. (EUR)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#1D9E75"></span>E — Solar1 Vergütung (0,4675 €/kWh)</span><span><span class="leg-sq" style="background:#5CC8A8"></span>O — Solar2 Einspeisung (0,093 €/kWh)</span><span><span class="leg-sq" style="background:#0F6E56"></span>I — Kfz-Ladeabrechnung</span></div>
+    <div style="position:relative;width:100%;height:260px"><canvas id="g_eur"></canvas></div>
+  </div>
+
+</div>
+
+<!-- TAB HEIZUNG -->
+<div id="tab-heizung" class="tab-content">
+  <p class="section-heading">Heizung &amp; Brennstoffe 2009 – 2025</p>
+  <details class="info-box"><summary>Phasen:</summary><div style="padding-top:8px">
+    <strong>Phasen:</strong>
+    <strong>2009–2012: Ölheizung</strong> — Spalte W = Heizölverbrauch kWh (10 kWh/L). Kein Pellet-/Scheitholzbetrieb.<br>
+    <strong>2013: Übergangsjahr</strong> — Ölheizung bis Oktober 2013, ab Oktober Einbau Fröling Pellet-/Scheitholzkessel. Kein Jahreswert in Excel.<br>
+    <strong>ab 2014: Fröling Pellets + Scheitholz</strong> — W = Kesselwärme gesamt. Pellets Ø 3.358 kg/Jahr × 4,9 kWh/kg = 16.453 kWh. Scheitholz = W − Pellets → ÷ 1.800 kWh/rm (Buche/Eiche, FNR).<br>
+    <strong>Solarthermie (Solvis, Spalte H)</strong> ab 2014 erfasst.
+  </div></details>
+  <div class="metric-grid" id="heiz-kpis"></div>
+
+  <div class="chart-section">
+    <p class="chart-title">Gesamtwärme p.a. (kWh) — nach Brennstoff</p>
+    <div class="legend">
+      <span><span class="leg-sq" style="background:#4A4A6A"></span>Heizöl (2009–2012)</span>
+      <span><span class="leg-sq" style="background:#993C1D"></span>Scheitholz (ab 2014)</span>
+      <span><span class="leg-sq" style="background:#BA7517"></span>Pellets (ab 2014)</span>
+      <span><span class="leg-sq" style="background:#EF9F27"></span>Solarthermie (ab 2014)</span>
+      <span style="color:var(--text3);font-style:italic">2013 = Übergangsjahr (kein Jahreswert)</span>
+    </div>
+    <div style="position:relative;width:100%;height:280px"><canvas id="h_gesamt"></canvas></div>
+  </div>
+
+  <div class="chart-section">
+    <p class="chart-title">Scheitholzbedarf p.a. (Raummeter Buche/Eiche)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#5C3A1E"></span>Scheitholz rm</span></div>
+    <div style="position:relative;width:100%;height:240px"><canvas id="h_rm"></canvas></div>
+  </div>
+
+  <div class="chart-section">
+    <p class="chart-title">Anteile Wärmeträger p.a. (%)</p>
+    <div class="legend">
+      <span><span class="leg-sq" style="background:#4A4A6A"></span>Heizöl</span>
+      <span><span class="leg-sq" style="background:#993C1D"></span>Scheitholz</span>
+      <span><span class="leg-sq" style="background:#BA7517"></span>Pellets</span>
+      <span><span class="leg-sq" style="background:#EF9F27"></span>Solarthermie</span>
+    </div>
+    <div style="position:relative;width:100%;height:260px"><canvas id="h_anteil"></canvas></div>
+  </div>
+
+
+</div>
+
+<!-- TAB BILANZ -->
+<div id="tab-bilanz" class="tab-content">
+  <p class="section-heading">Energiebilanz 2009 – 2025</p>
+  <details class="info-box"><summary>Strom:</summary><div style="padding-top:8px">
+    <strong>Strom:</strong> Zählerwechsel 8.6.2020 → tatsächlicher Jahresverbrauch 2020: 7.125 kWh. Ab 2020 Kosten aus Spalte L, davor BDEW-Historienpreise.<br>
+    <strong>Heizung:</strong> Pellets 13.603 € gesamt ÷ 13 Jahre = 1.046 €/Jahr (Durchschnitt, da Kauf nur bei Lagerleerstand).<br>
+    <strong>Wasser:</strong> TWRS-Trinkwasserpreis + EVS-Abwassergebühr — separat im Tab „Wasserkosten" detailliert.
+  </div></details>
+  <div class="metric-grid" id="bilanz-kpis"></div>
+  <div class="chart-section">
+    <p class="chart-title">Energiekosten p.a. (EUR) — Strom + Heizung</p>
+    <div class="legend"><span><span class="leg-sq" style="background:rgba(226,75,74,0.4)"></span>Strom (kalkuliert)</span><span><span class="leg-sq" style="background:#E24B4A"></span>Strom (Spalte L)</span><span><span class="leg-sq" style="background:#993C1D"></span>Heizung (Pellet-Ø)</span></div>
+    <div style="position:relative;width:100%;height:260px"><canvas id="b_kosten"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Gesamtkosten (Energie) vs. Gesamterträge p.a. (EUR)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#E24B4A"></span>Gesamtkosten</span><span><span class="leg-sq" style="background:#1D9E75"></span>Gesamterträge</span></div>
+    <div style="position:relative;width:100%;height:260px"><canvas id="b_vergleich"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Energiesaldo p.a. (EUR)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#1D9E75"></span>Überschuss</span><span><span class="leg-sq" style="background:#E24B4A"></span>Defizit</span></div>
+    <div style="position:relative;width:100%;height:240px"><canvas id="b_saldo"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Strompreis ct/kWh (Arbeitspreis brutto inkl. MwSt)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:rgba(24,95,165,0.4)"></span>BDEW-Historienpreise (2009–2019)</span><span><span class="leg-sq" style="background:#185FA5"></span>aus Belegen (ab 2020)</span></div>
+    <div style="position:relative;width:100%;height:200px"><canvas id="b_preis"></canvas></div>
+  </div>
+</div>
+
+<!-- TAB WASSERKOSTEN -->
+<div id="tab-wasser" class="tab-content">
+  <p class="section-heading">Wasserkosten 2009 – 2025</p>
+  <details class="info-box"><summary>Trinkwasser (TWRS GmbH):</summary><div style="padding-top:8px">
+    <strong>Trinkwasser (TWRS GmbH):</strong> Verifiziert aus Bescheiden: 2014–2017: 1,65 €/m³ netto + Grundpreis. Ab 2018: 1,80 €/m³. Ab 1.7.2023: 1,95 €/m³ + 13,50 €/Mon. Alle Preise + 7% MwSt.<br>
+    <strong>Abwasser (EVS):</strong> Verifiziert: 2,68 €/m³ bereits ab 2014 (Bescheid 2015 bestätigt). Ab 2023: 2,78 €/m³, ab 2024 geschätzt 2,90 €/m³. Keine MwSt (kommunale Gebühr). Inkl. Grundgebühr, abzgl. Gartenzähler-Gutschrift (~8–11 m³/Jahr).<br>
+    <strong>Zählerwechsel:</strong> 2014 → neuer Zähler, Stand 0. 2022 → erneuter Wechsel, Stand 0. 2009–2012: Preise rückwärts extrapoliert.
+  </div></details>
+  <div class="metric-grid" id="wasser-kpis"></div>
+  <div class="chart-section">
+    <p class="chart-title">Wasserkosten p.a. (EUR) — Trinkwasser + Abwasser</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#185FA5"></span>Trinkwasser (TWRS)</span><span><span class="leg-sq" style="background:#0F6E56"></span>Abwasser (EVS)</span></div>
+    <div style="position:relative;width:100%;height:260px"><canvas id="w_kosten"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Gesamtkosten Wasser p.a. (EUR)</p>
+    <div style="position:relative;width:100%;height:220px"><canvas id="w_gesamt"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Wasserverbrauch vs. Gesamtkosten</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#0F6E56"></span>Verbrauch m³</span><span><span class="leg-sq" style="background:#185FA5"></span>Kosten EUR</span></div>
+    <div style="position:relative;width:100%;height:240px"><canvas id="w_vergl"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Effektiver Gesamtpreis €/m³ (inkl. Grundpreis)</p>
+    <div style="position:relative;width:100%;height:200px"><canvas id="w_preis"></canvas></div>
+  </div>
+</div>
+
+<!-- TAB JAHRESDETAIL -->
+<div id="tab-detail" class="tab-content active">
+  <p class="section-heading">Jahresdetail: Vorjahr / Gewähltes Jahr</p>
+  <div class="year-bar">
+    <label>Jahr wählen:</label>
+    <button class="nav-btn" id="btn-prev" onclick="shiftYear(-1)">&#8592;</button>
+    <input id="year-input" type="number" min="2009" max="2026" value="2025" oninput="applyYear(+this.value)">
+    <button class="nav-btn" id="btn-next" onclick="shiftYear(1)">&#8594;</button>
+    <span class="range-info">Daten: 2009 – 2026*</span>
+  </div>
+  <div id="year-header" style="font-size:14px;color:var(--text2);margin-bottom:1rem"></div>
+  <div class="metric-grid" id="metrics"></div>
+  <div class="chart-section">
+    <p class="chart-title">Strom &amp; Solar (kWh)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#185FA5"></span>Strombezug</span><span><span class="leg-sq" style="background:#BA7517"></span>Solar gesamt</span></div>
+    <div style="position:relative;width:100%;height:220px"><canvas id="d1"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Erträge (EUR)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#1D9E75"></span>E — Solar1 Vergütung</span><span><span class="leg-sq" style="background:#5CC8A8"></span>O — Solar2 Einspeisung</span><span><span class="leg-sq" style="background:#0F6E56"></span>I — Kfz</span></div>
+    <div style="position:relative;width:100%;height:200px"><canvas id="d_eur"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Energiebilanz (EUR)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#E24B4A"></span>Energiekosten</span><span><span class="leg-sq" style="background:#1D9E75"></span>Energieerträge</span></div>
+    <div style="position:relative;width:100%;height:200px"><canvas id="d_bilanz"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Wasserkosten (EUR)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#185FA5"></span>Trinkwasser</span><span><span class="leg-sq" style="background:#0F6E56"></span>Abwasser</span></div>
+    <div style="position:relative;width:100%;height:200px"><canvas id="d_wasser"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <p class="chart-title">Heizenergie (kWh)</p>
+    <div class="legend"><span><span class="leg-sq" style="background:#993C1D"></span>Fröling</span></div>
+    <div style="position:relative;width:100%;height:180px"><canvas id="d2"></canvas></div>
+  </div>
+</div>
+
+<script>
+const DATA={
+  // strom      = Netzbezug Hauptzähler (K) — was der Versorger liefert
+  // stromOhneElw = Hausverbrauch ohne Wallbox (R) — Netz + PV-Eigenverbrauch, ohne ELW
+  // stromElw   = Wallbox-Verbrauch (S)
+  // hausGes    = Gesamtverbrauch inkl. ELW (P = R + S)
+  // eurR       = Einspeisung gesamt: PV1 (e3dc, 9,3 ct) + PV2 (Solar1, 46,75 ct) — KORRIGIERT aus Belegen 2025
+  // Wasser 2025: korrigiert aus TWRS-Bescheid 2026: 127 m³, SW jetzt 3,18 €/m³
+  // stromK 2025: korrigiert aus grüüün-Endabrechnung: 3.073 € (10.751 kWh)
+  // Wasserpreise TWRS: TW 2018-2022: 1,80 €/m³; ab 2023: 1,875 €/m³; ab 2025: 2,18 €/m³ netto (Abr.)
+  //                    SW: 2,68 €/m³ bis 2024; ab 2025: 3,18 €/m³ — aus TWRS-Bescheid 2026 bestätigt
+  2009:{strom:9587,stromOhneElw:null,stromElw:null,solar:4720,solarD:4720,solarG:null,solarJ:null,heiz:36139,wasser:201,eurE:2624,eurL:null,eurR:null,stromK:2205,heizK:0,wasserTW:410,wasserAW:567},
+  2010:{strom:9246,stromOhneElw:null,stromElw:null,solar:4303,solarD:4303,solarG:null,solarJ:null,heiz:36896,wasser:253,eurE:2392,eurL:null,eurR:null,stromK:2191,heizK:0,wasserTW:511,wasserAW:710},
+  2011:{strom:9340,stromOhneElw:null,stromElw:null,solar:4644,solarD:4644,solarG:null,solarJ:null,heiz:31739,wasser:215,eurE:2582,eurL:null,eurR:null,stromK:2363,heizK:0,wasserTW:458,wasserAW:628},
+  2012:{strom:10024,stromOhneElw:null,stromElw:null,solar:4579,solarD:4579,solarG:null,solarJ:null,heiz:36630,wasser:228,eurE:2546,eurL:null,eurR:null,stromK:2606,heizK:0,wasserTW:487,wasserAW:676},
+  // 2013: Schätzwerte (*) — Übergangsjahr Öl→Fröling (Umbau Oktober 2013)
+  2013:{strom:9950,stromOhneElw:null,stromElw:null,solar:5690,solarD:4510,solarG:null,solarJ:1180,heiz:35500,wasser:205,eurE:2510,eurL:null,eurR:null,stromK:2786,heizK:1046,wasserTW:462,wasserAW:632,est:true},
+  2014:{strom:9880,stromOhneElw:null,stromElw:null,solar:9169,solarD:4449,solarG:null,solarJ:4720,heiz:35820,wasser:182,eurE:2474,eurL:null,eurR:null,stromK:2865,heizK:1046,wasserTW:422,wasserAW:553},
+  2015:{strom:10063,stromOhneElw:null,stromElw:null,solar:8520,solarD:3800,solarG:null,solarJ:4720,heiz:28809,wasser:270,eurE:2113,eurL:null,eurR:null,stromK:2868,heizK:1046,wasserTW:584,wasserAW:789},
+  2016:{strom:9241,stromOhneElw:null,stromElw:null,solar:8726,solarD:4006,solarG:null,solarJ:4720,heiz:30761,wasser:181,eurE:2227,eurL:null,eurR:null,stromK:2652,heizK:1046,wasserTW:435,wasserAW:551},
+  2017:{strom:9241,stromOhneElw:null,stromElw:null,solar:8726,solarD:4006,solarG:null,solarJ:4720,heiz:30761,wasser:181,eurE:2227,eurL:null,eurR:null,stromK:2698,heizK:1046,wasserTW:439,wasserAW:543},
+  2018:{strom:9004,stromOhneElw:8615,stromElw:389,solar:8823,solarD:4103,solarG:null,solarJ:4720,heiz:27437,wasser:250,eurE:2281,eurL:null,eurR:null,stromK:2656,heizK:1046,wasserTW:621,wasserAW:725},
+  2019:{strom:9577,stromOhneElw:8965,stromElw:612,solar:9127,solarD:4292,solarG:null,solarJ:4835,heiz:28606,wasser:161,eurE:2386,eurL:null,eurR:null,stromK:2911,heizK:1046,wasserTW:449,wasserAW:486},
+  // 2020: Zählerwechsel 8.6.2020 → tatsächlicher Jahresverbrauch: 4.707 + 2.418 = 7.125 kWh
+  2020:{strom:7125,stromOhneElw:10661,stromElw:845,solar:15938,solarD:4466,solarG:6411,solarJ:5061,heiz:27112,wasser:186,eurE:2483,eurL:1444,eurR:266,stromK:3058,heizK:1046,wasserTW:497,wasserAW:553},
+  2021:{strom:3391,stromOhneElw:10148,stromElw:468,solar:19606,solarD:4464,solarG:10812,solarJ:4330,heiz:31601,wasser:136,eurE:2482,eurL:817,eurR:287,stromK:767,heizK:1046,wasserTW:401,wasserAW:419},
+  2022:{strom:3649,stromOhneElw:11138,stromElw:689,solar:21796,solarD:4897,solarG:11972,solarJ:4927,heiz:24807,wasser:161,eurE:2723,eurL:1429,eurR:325,stromK:1012,heizK:1046,wasserTW:449,wasserAW:486},
+  // stromK 2023: korrigiert aus energis Schlussrechnung Jan-Dez 2023 (1.744,40 € brutto; vorher 2.176 € = waren Abschläge)
+  2023:{strom:3800,stromOhneElw:10718,stromElw:691,solar:19015,solarD:4224,solarG:10348,solarJ:4443,heiz:25112,wasser:156,eurE:2349,eurL:1070,eurR:219,stromK:1744,heizK:1046,wasserTW:468,wasserAW:490},
+  2024:{strom:6367,stromOhneElw:13221,stromElw:706,solar:18091,solarD:4075,solarG:10491,solarJ:3525,heiz:28101,wasser:131,eurE:2266,eurL:1989,eurR:199,stromK:1844,heizK:1046,wasserTW:447,wasserAW:438},
+  // 2025: korrigiert aus Belegen: stromK=3.073 (grüüün-Endabr.), wasser=127m³ (TWRS-Bescheid)
+  //        eurR=2.711 (PV1 209,50 + PV2 2.501,24 — PV2 war bisher fehlend!)
+  //        wasserTW/AW: TW 2,18 €/m³ netto, SW 3,18 €/m³ (neue Preise ab 2025 bestätigt)
+  2025:{strom:8198,stromOhneElw:16016,stromElw:662,solar:20170,solarD:4499,solarG:11346,solarJ:4325,heiz:27476,wasser:127,eurE:2501,eurL:2635,eurR:2711,stromK:3073,heizK:1046,wasserTW:527,wasserAW:452},
+  // 2026: Aktualisiert mit Zwischenständen 31.05.2026 aus Excel
+  // Solar2 (e3dc) F: 4.293 kWh Jan-Mai → linear *12/5 = ~10.303 kWh/Jahr
+  // Solvis G: 42.384-40.701 = 1.683 kWh Jan-Mai → linear ~4.039 kWh/Jahr
+  // Solar1 D: kein Zwischenstand → Ø Vorjahre ~4.500 kWh
+  // Solar gesamt: 4.500 + 10.303 + 4.039 = ~18.842 kWh
+  // Übrige Werte (Strom, Heizung, Wasser): aus Vorauszahlungen/Vorjahres-Schätzung
+  2026:{strom:8200,stromOhneElw:14600,stromElw:630,solar:18842,solarD:4500,solarG:10303,solarJ:4039,heiz:28000,wasser:136,eurE:2400,eurL:2400,eurR:2916,stromK:2400,heizK:1046,wasserTW:616,wasserAW:480,est:true}
+};
+const YEARS=Object.keys(DATA).map(Number).sort((a,b)=>a-b);
+const ALL_LBLS=YEARS.map(y=>DATA[y].est?y+'e':String(y));
+const EST_YEARS=YEARS.filter(y=>DATA[y].est);
+// Hilfsfunktion: Farbe für Schätzjahre halbtransparent (opacity 0.4)
+function estColor(col){
+  return YEARS.map(y=>DATA[y].est
+    ? col.startsWith('rgba') ? col.replace(/[\d.]+\)$/,'0.35)') : col+'66'
+    : col);
+}
+function estColors(cols){return YEARS.map((y,i)=>DATA[y].est?cols[i]+'66':cols[i]);}
+const REAL_L=[2020,2021,2022,2023,2024,2025];
+
+const isDark=matchMedia('(prefers-color-scheme:dark)').matches;
+const gridCol=isDark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.07)';
+const tickCol=isDark?'#9c9a92':'#73726c';
+const lf={size:11,family:'system-ui'};
+const base=(yFmt)=>({responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+  scales:{x:{ticks:{color:tickCol,font:lf,maxRotation:45,autoSkip:false},grid:{color:gridCol}},
+          y:{ticks:{color:tickCol,font:lf,callback:yFmt||(v=>v.toLocaleString('de'))},grid:{color:gridCol}}}});
+function pct(arr){return arr.map((v,i)=>{if(i===0||v==null||arr[i-1]==null)return null;return parseFloat(((v-arr[i-1])/arr[i-1]*100).toFixed(1));});}
+
+const allStrom=YEARS.map(y=>DATA[y].strom);
+const allStromOhneElw=YEARS.map(y=>DATA[y].stromOhneElw??null);
+const allStromElw=YEARS.map(y=>DATA[y].stromElw??null);
+const allHausGes=YEARS.map(y=>(DATA[y].stromOhneElw!=null&&DATA[y].stromElw!=null)?DATA[y].stromOhneElw+DATA[y].stromElw:null);
+const allSolar=YEARS.map(y=>DATA[y].solar);
+const allSolarD=YEARS.map(y=>DATA[y].solarD);
+const allSolarG=YEARS.map(y=>DATA[y].solarG);
+const allSolarJ=YEARS.map(y=>DATA[y].solarJ);
+const allHeiz=YEARS.map(y=>DATA[y].heiz);
+const allWasser=YEARS.map(y=>DATA[y].wasser);
+const allEurE=YEARS.map(y=>DATA[y].eurE);
+const allEurL=YEARS.map(y=>DATA[y].eurL);
+const allEurR=YEARS.map(y=>DATA[y].eurR);
+const allStromK=YEARS.map(y=>DATA[y].stromK);
+const allHeizK=YEARS.map(y=>DATA[y].heizK);
+const allWasserTW=YEARS.map(y=>DATA[y].wasserTW);
+const allWasserAW=YEARS.map(y=>DATA[y].wasserAW);
+const allWasserGes=YEARS.map(y=>DATA[y].wasserTW&&DATA[y].wasserAW?DATA[y].wasserTW+DATA[y].wasserAW:null);
+const allGesKosten=YEARS.map(y=>(DATA[y].stromK||0)+DATA[y].heizK);
+const allGesErtrag=YEARS.map(y=>(DATA[y].eurE||0)+(DATA[y].eurL||0)+(DATA[y].eurR||0));
+const allSaldo=YEARS.map((_,i)=>allGesErtrag[i]-allGesKosten[i]);
+// Echte Arbeitpreise brutto ct/kWh direkt aus Belegen:
+// 2009-2019: BDEW-Historienpreise · 2020-2022: energis-Rechnungen (Arbeitspreis×MwSt)
+// 2023: energis 35,55 ct×1,19=42,3 ct (Energiekrise) · 2024: implizit · 2025: grüüün 22,18 ct×1,19
+const CT_KWH_BELEGE={
+  2009:23.0,2010:23.7,2011:25.3,2012:26.0,2013:28.0,2014:29.0,2015:28.5,
+  2016:28.7,2017:29.2,2018:29.5,2019:30.4,
+  2020:30.0,2021:31.5,2022:28.1,2023:42.3,2024:29.0,2025:26.4,2026:26.4
+};
+const BELEG_JAHRE=new Set([2020,2021,2022,2023,2024,2025,2026]);
+const ctKwh=YEARS.map(y=>CT_KWH_BELEGE[y]??null);
+const effPreis=YEARS.map(y=>DATA[y].wasser&&DATA[y].wasserTW&&DATA[y].wasserAW?parseFloat(((DATA[y].wasserTW+DATA[y].wasserAW)/DATA[y].wasser).toFixed(2)):null);
+
+// Heizungs-Aufschlüsselung
+const PELLET_KWH_KG = 4.9;
+const HOLZ_KWH_RM   = 1800;
+const HEIZOEL_KWH_L = 10;
+const AVG_PELLET_KG = 3358;
+const AVG_PELLET_KWH = Math.round(AVG_PELLET_KG * PELLET_KWH_KG); // 16453 kWh
+const OEL_JAHRE = [2009,2010,2011,2012];
+// 2013: Übergangsjahr — Öl Jan–Sep (*), Fröling Okt–Dez (*)
+const HEIZ_2013_OEL      = 26500; // kWh Heizöl Jan–Sep (*)
+const HEIZ_2013_FROELING  = 9000; // kWh Fröling Okt–Dez (*)
+const PELLET_2013_KWH    = Math.round(AVG_PELLET_KWH * 3/12); // ~4113 kWh (*)
+const SCHEIT_2013_KWH    = Math.max(0, HEIZ_2013_FROELING - PELLET_2013_KWH); // ~4887 kWh (*)
+const allSolarTherm = YEARS.map(y=>DATA[y].solarJ);
+const allHeizoelKwh = YEARS.map(y=>{
+  if(OEL_JAHRE.includes(y)) return DATA[y].heiz;
+  if(y===2013) return HEIZ_2013_OEL;
+  return null;
+});
+const allPelletKwh = YEARS.map(y=>{
+  if(y===2013) return PELLET_2013_KWH;
+  if(y>=2014)  return AVG_PELLET_KWH;
+  return null;
+});
+const allScheitKwh = YEARS.map((y,i)=>{
+  if(y===2013) return SCHEIT_2013_KWH;
+  if(OEL_JAHRE.includes(y)||!DATA[y].heiz) return null;
+  return Math.max(0, DATA[y].heiz - AVG_PELLET_KWH);
+});
+const allScheitRm  = allScheitKwh.map(v=>v!=null?parseFloat((v/HOLZ_KWH_RM).toFixed(1)):null);
+const allGesWaerme = YEARS.map((y,i)=>{
+  const w=DATA[y].heiz, s=allSolarTherm[i];
+  if(!w) return null;
+  return w + (s||0);
+});
+const allHeizoelLiter = YEARS.map(y=>{
+  if(OEL_JAHRE.includes(y)&&DATA[y].heiz) return Math.round(DATA[y].heiz/HEIZOEL_KWH_L);
+  if(y===2013) return Math.round(HEIZ_2013_OEL/HEIZOEL_KWH_L);
+  return null;
+});
+
+let chartsBuilt={verbrauch:false,solar:false,heizung:false,bilanz:false,wasser:false,detail:false};
+function showTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelector(`[onclick="showTab('${name}')"]`).classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+  if(!chartsBuilt[name]){buildCharts(name);chartsBuilt[name]=true;}
+}
+
+function buildCharts(name){
+  if(name==='verbrauch'){
+    new Chart(document.getElementById('g1'),{type:'bar',data:{labels:ALL_LBLS,datasets:[{label:'Strom',data:allStrom,backgroundColor:estColor('#185FA5'),borderRadius:3},{label:'Solar',data:allSolar,backgroundColor:estColor('#BA7517'),borderRadius:3}]},options:base()});
+    new Chart(document.getElementById('g2'),{type:'line',data:{labels:ALL_LBLS,datasets:[{label:'Heizung',data:allHeiz,borderColor:'#993C1D',backgroundColor:YEARS.map(y=>DATA[y].est?'rgba(153,60,29,0.05)':'rgba(153,60,29,0.1)'),borderWidth:2,pointRadius:3,pointBackgroundColor:'#993C1D',tension:0.3,fill:true,spanGaps:true}]},options:base()});
+    new Chart(document.getElementById('g3'),{type:'bar',data:{labels:ALL_LBLS,datasets:[{label:'Wasser',data:allWasser,backgroundColor:estColor('#0F6E56'),borderRadius:3,spanGaps:true}]},options:base()});
+
+    new Chart(document.getElementById('g_elw'),{type:'bar',data:{labels:ALL_LBLS,datasets:[
+      {label:'Haus ohne ELW (R)',data:allStromOhneElw,backgroundColor:'#185FA5',borderRadius:3,stack:'h'},
+      {label:'ELW',data:allStromElw,backgroundColor:'#5C8EC9',borderRadius:3,stack:'h'}
+    ]},options:base()});
+  }
+  if(name==='solar'){
+    new Chart(document.getElementById('g1b'),{type:'bar',data:{labels:ALL_LBLS,datasets:[{label:'Solar1',data:allSolarD,backgroundColor:estColor('#EF9F27'),borderRadius:3,stack:'s'},{label:'e3dc',data:allSolarG,backgroundColor:estColor('#BA7517'),borderRadius:3,stack:'s'},{label:'Solvis',data:allSolarJ,backgroundColor:estColor('#633806'),borderRadius:3,stack:'s'}]},options:base()});
+    new Chart(document.getElementById('g_eur'),{type:'bar',data:{labels:ALL_LBLS,datasets:[{label:'E — Solar1 Vergütung',data:allEurE,backgroundColor:estColor('#1D9E75'),borderRadius:3,stack:'e'},{label:'O — Solar2 Einspeisung',data:allEurR,backgroundColor:estColor('#5CC8A8'),borderRadius:3,stack:'e'},{label:'I — Kfz',data:allEurL,backgroundColor:estColor('#0F6E56'),borderRadius:3,stack:'e'}]},options:base(v=>v.toLocaleString('de')+' €')});
+
+  }
+  if(name==='heizung'){
+    // 2013-Balken halbtransparent (Schätzwert) darstellen
+    const est2013idx = YEARS.indexOf(2013);
+    const mkEstColor = (col) => YEARS.map((_,i)=>i===est2013idx?col.replace(')',',0.45)').replace('rgb','rgba'):col);
+    // Gestapelt: Heizöl | Scheitholz + Pellets + Solarthermie
+    new Chart(document.getElementById('h_gesamt'),{type:'bar',data:{labels:ALL_LBLS,datasets:[
+      {label:'Heizöl',data:allHeizoelKwh,backgroundColor:YEARS.map((_,i)=>i===est2013idx?'rgba(74,74,106,0.5)':'#4A4A6A'),borderRadius:3,stack:'h'},
+      {label:'Scheitholz',data:allScheitKwh,backgroundColor:YEARS.map((_,i)=>i===est2013idx?'rgba(153,60,29,0.5)':'#993C1D'),borderRadius:3,stack:'h'},
+      {label:'Pellets',data:allPelletKwh,backgroundColor:YEARS.map((_,i)=>i===est2013idx?'rgba(186,117,23,0.5)':'#BA7517'),borderRadius:3,stack:'h'},
+      {label:'Solarthermie',data:allSolarTherm,backgroundColor:YEARS.map((_,i)=>i===est2013idx?'rgba(239,159,39,0.5)':'#EF9F27'),borderRadius:3,stack:'h'}
+    ]},options:base()});
+    // Scheitholz Raummeter
+    new Chart(document.getElementById('h_rm'),{type:'bar',data:{labels:ALL_LBLS,datasets:[{
+      label:'rm',data:allScheitRm,backgroundColor:YEARS.map((_,i)=>i===est2013idx?'rgba(92,58,30,0.5)':'#5C3A1E'),borderRadius:3,spanGaps:true
+    }]},options:base(v=>v+' rm')});
+    // Anteile % inkl. 2013
+    const anteilOel   =YEARS.map((y,i)=>{const g=allGesWaerme[i];return g&&(OEL_JAHRE.includes(y)||y===2013)?parseFloat((allHeizoelKwh[i]/g*100).toFixed(1)):null;});
+    const anteilScheit=YEARS.map((y,i)=>{const g=allGesWaerme[i];return g&&allScheitKwh[i]?parseFloat((allScheitKwh[i]/g*100).toFixed(1)):null;});
+    const anteilPellet=YEARS.map((y,i)=>{const g=allGesWaerme[i];return g&&y>=2013&&allPelletKwh[i]?parseFloat((allPelletKwh[i]/g*100).toFixed(1)):null;});
+    const anteilSolar =YEARS.map((y,i)=>{const g=allGesWaerme[i],s=allSolarTherm[i];return g&&s?parseFloat((s/g*100).toFixed(1)):null;});
+    new Chart(document.getElementById('h_anteil'),{type:'bar',data:{labels:ALL_LBLS,datasets:[
+      {label:'Heizöl %',data:anteilOel,backgroundColor:YEARS.map((_,i)=>i===est2013idx?'rgba(74,74,106,0.5)':'#4A4A6A'),borderRadius:3,stack:'a'},
+      {label:'Scheitholz %',data:anteilScheit,backgroundColor:YEARS.map((_,i)=>i===est2013idx?'rgba(153,60,29,0.5)':'#993C1D'),borderRadius:3,stack:'a'},
+      {label:'Pellets %',data:anteilPellet,backgroundColor:YEARS.map((_,i)=>i===est2013idx?'rgba(186,117,23,0.5)':'#BA7517'),borderRadius:3,stack:'a'},
+      {label:'Solarthermie %',data:anteilSolar,backgroundColor:YEARS.map((_,i)=>i===est2013idx?'rgba(239,159,39,0.5)':'#EF9F27'),borderRadius:3,stack:'a'}
+    ]},options:base(v=>v+'%')});
+
+    // KPIs (2013 aus Fröling-Durchschnitt raushalten da Schätzjahr)
+    const validFroe=allGesWaerme.filter((v,i)=>v&&!OEL_JAHRE.includes(YEARS[i])&&YEARS[i]!==2013);
+    const validOel =OEL_JAHRE.map(y=>DATA[y].heiz).filter(v=>v);
+    const avgGWFroe=validFroe.length?Math.round(validFroe.reduce((a,b)=>a+b)/validFroe.length):0;
+    const avgGWOel =validOel.length?Math.round(validOel.reduce((a,b)=>a+b)/validOel.length):0;
+    const validSch =allScheitKwh.filter((v,i)=>v&&YEARS[i]!==2013);
+    const avgSch   =validSch.length?Math.round(validSch.reduce((a,b)=>a+b)/validSch.length):0;
+    const avgSchRm =parseFloat((avgSch/HOLZ_KWH_RM).toFixed(1));
+    const validSolT=allSolarTherm.filter(v=>v);
+    const avgSolT  =validSolT.length?Math.round(validSolT.reduce((a,b)=>a+b)/validSolT.length):0;
+    document.getElementById('heiz-kpis').innerHTML=`
+      <div class="metric" style="border:1px solid #4A4A6A"><p class="metric-label">Ø Öljahre 2009–2012</p><p class="metric-value">${avgGWOel.toLocaleString('de')} kWh</p><p class="metric-sub">~${Math.round(avgGWOel/10).toLocaleString('de')} L/Jahr</p></div>
+      <div class="metric"><p class="metric-label">Ø Fröling 2014–2025</p><p class="metric-value">${avgGWFroe.toLocaleString('de')} kWh</p><p class="metric-sub">Kessel + Solar (ohne 2013*)</p></div>
+      <div class="metric"><p class="metric-label">Ø Pellets/Jahr</p><p class="metric-value">${AVG_PELLET_KG.toLocaleString('de')} kg</p><p class="metric-sub">= ${AVG_PELLET_KWH.toLocaleString('de')} kWh</p></div>
+      <div class="metric"><p class="metric-label">Ø Scheitholz/Jahr</p><p class="metric-value">${avgSch.toLocaleString('de')} kWh</p><p class="metric-sub">≈ ${avgSchRm} rm Buche/Eiche</p></div>
+      <div class="metric"><p class="metric-label">Ø Solarthermie/Jahr</p><p class="metric-value">${avgSolT.toLocaleString('de')} kWh</p><p class="metric-sub">ab 2014 (Solvis)</p></div>
+      <div class="metric"><p class="metric-label">Einsparung vs. Öl</p><p class="metric-value" style="color:var(--success)">${(avgGWOel-avgGWFroe).toLocaleString('de')} kWh</p><p class="metric-sub">Ø Fröling vs. Ø Öl/Jahr</p></div>`;
+  }
+  if(name==='bilanz'){
+    new Chart(document.getElementById('b_kosten'),{type:'bar',data:{labels:ALL_LBLS,datasets:[{label:'Strom',data:allStromK,backgroundColor:YEARS.map(y=>DATA[y].est?'rgba(226,75,74,0.25)':(REAL_L.includes(y)?'#E24B4A':'rgba(226,75,74,0.4)')),borderRadius:3,stack:'k'},{label:'Heizung',data:allHeizK,backgroundColor:estColor('#993C1D'),borderRadius:3,stack:'k'}]},options:base(v=>v.toLocaleString('de')+' €')});
+    new Chart(document.getElementById('b_vergleich'),{type:'bar',data:{labels:ALL_LBLS,datasets:[{label:'Kosten',data:allGesKosten,backgroundColor:estColor('#E24B4A'),borderRadius:3},{label:'Erträge',data:allGesErtrag,backgroundColor:estColor('#1D9E75'),borderRadius:3}]},options:base(v=>v.toLocaleString('de')+' €')});
+    new Chart(document.getElementById('b_saldo'),{type:'bar',data:{labels:ALL_LBLS,datasets:[{label:'Saldo',data:allSaldo,backgroundColor:allSaldo.map((v,i)=>DATA[YEARS[i]].est?(v>=0?'#1D9E75aa':'#E24B4Aaa'):(v>=0?'#1D9E75':'#E24B4A')),borderRadius:3}]},options:base(v=>v.toLocaleString('de')+' €')});
+    new Chart(document.getElementById('b_preis'),{type:'line',data:{labels:ALL_LBLS,datasets:[{label:'ct/kWh',data:ctKwh,borderColor:'#185FA5',backgroundColor:'rgba(24,95,165,0.08)',borderWidth:2,pointRadius:4,pointBackgroundColor:YEARS.map(y=>DATA[y].est?'rgba(24,95,165,0.3)':(BELEG_JAHRE.has(y)?'#185FA5':'rgba(24,95,165,0.4)')),tension:0.3,fill:true,spanGaps:true}]},options:base(v=>v+' ct')});
+    const avgK=Math.round(allGesKosten.reduce((a,b)=>a+b)/allGesKosten.length);
+    const avgE=Math.round(allGesErtrag.reduce((a,b)=>a+b)/allGesErtrag.length);
+    const avgS=avgE-avgK;
+    const maxS=Math.max(...allSaldo),minS=Math.min(...allSaldo);
+    const bestY=YEARS[allSaldo.indexOf(maxS)],worstY=YEARS[allSaldo.indexOf(minS)];
+    document.getElementById('bilanz-kpis').innerHTML=`
+      <div class="metric"><p class="metric-label">⌀ Kosten/Jahr</p><p class="metric-value">${avgK.toLocaleString('de')} €</p><p class="metric-sub">Strom + Heizung</p></div>
+      <div class="metric"><p class="metric-label">⌀ Erträge/Jahr</p><p class="metric-value">${avgE.toLocaleString('de')} €</p><p class="metric-sub">Solar + Kfz + Einsp.</p></div>
+      <div class="metric" style="border:1px solid ${avgS>=0?'#1D9E75':'#E24B4A'}"><p class="metric-label">⌀ Saldo/Jahr</p><p class="metric-value" style="color:${avgS>=0?'#1D9E75':'#E24B4A'}">${avgS>=0?'+':''}${avgS.toLocaleString('de')} €</p><p class="metric-sub">2009–2025</p></div>
+      <div class="metric"><p class="metric-label">Bestes Jahr</p><p class="metric-value" style="color:#1D9E75">${bestY}</p><p class="metric-sub">Saldo ${maxS>=0?'+':''}${maxS.toLocaleString('de')} €</p></div>
+      <div class="metric"><p class="metric-label">Schwächstes Jahr</p><p class="metric-value" style="color:#E24B4A">${worstY}</p><p class="metric-sub">Saldo ${minS.toLocaleString('de')} €</p></div>
+      <div class="metric"><p class="metric-label">Pellet-Ø/Jahr</p><p class="metric-value">1.046 €</p><p class="metric-sub">13.603 € ÷ 13 Jahre</p></div>`;
+  }
+  if(name==='wasser'){
+    new Chart(document.getElementById('w_kosten'),{type:'bar',data:{labels:ALL_LBLS,datasets:[{label:'Trinkwasser',data:allWasserTW,backgroundColor:estColor('#185FA5'),borderRadius:3,stack:'w'},{label:'Abwasser',data:allWasserAW,backgroundColor:estColor('#0F6E56'),borderRadius:3,stack:'w'}]},options:base(v=>v.toLocaleString('de')+' €')});
+    new Chart(document.getElementById('w_gesamt'),{type:'bar',data:{labels:ALL_LBLS,datasets:[{label:'Gesamt',data:allWasserGes,backgroundColor:estColor('#185FA5'),borderRadius:3,spanGaps:true}]},options:base(v=>v.toLocaleString('de')+' €')});
+    new Chart(document.getElementById('w_vergl'),{type:'bar',data:{labels:ALL_LBLS,datasets:[{label:'m³',data:allWasser,backgroundColor:'rgba(15,110,86,0.7)',borderRadius:3,yAxisID:'y'},{label:'EUR',data:allWasserGes,backgroundColor:'rgba(24,95,165,0.7)',borderRadius:3,yAxisID:'y1'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:tickCol,font:lf,maxRotation:45,autoSkip:false},grid:{color:gridCol}},y:{ticks:{color:'#0F6E56',font:lf},grid:{color:gridCol},title:{display:true,text:'m³',color:'#0F6E56',font:lf}},y1:{position:'right',ticks:{color:'#185FA5',font:lf,callback:v=>v+' €'},grid:{drawOnChartArea:false},title:{display:true,text:'EUR',color:'#185FA5',font:lf}}}}});
+    new Chart(document.getElementById('w_preis'),{type:'line',data:{labels:ALL_LBLS,datasets:[{label:'€/m³',data:effPreis,borderColor:'#185FA5',backgroundColor:'rgba(24,95,165,0.08)',borderWidth:2,pointRadius:4,pointBackgroundColor:'#185FA5',tension:0.3,fill:true,spanGaps:true}]},options:base(v=>v.toFixed(2)+' €')});
+    const wValid=allWasserGes.filter(v=>v);
+    const avgW=Math.round(wValid.reduce((a,b)=>a+b)/wValid.length);
+    const maxW=Math.max(...wValid),minW=Math.min(...wValid);
+    const maxWY=YEARS[allWasserGes.indexOf(maxW)],minWY=YEARS[allWasserGes.indexOf(minW)];
+    const avgTW=Math.round(allWasserTW.filter(v=>v).reduce((a,b)=>a+b)/allWasserTW.filter(v=>v).length);
+    const avgAW=Math.round(allWasserAW.filter(v=>v).reduce((a,b)=>a+b)/allWasserAW.filter(v=>v).length);
+    document.getElementById('wasser-kpis').innerHTML=`
+      <div class="metric"><p class="metric-label">Ø Trinkwasser/Jahr</p><p class="metric-value">${avgTW.toLocaleString('de')} €</p><p class="metric-sub">TWRS inkl. Grundpreis</p></div>
+      <div class="metric"><p class="metric-label">Ø Abwasser/Jahr</p><p class="metric-value">${avgAW.toLocaleString('de')} €</p><p class="metric-sub">EVS Rehlingen-Siersburg</p></div>
+      <div class="metric"><p class="metric-label">⌀ Gesamt/Jahr</p><p class="metric-value">${avgW.toLocaleString('de')} €</p><p class="metric-sub">Trinkwasser + Abwasser</p></div>
+      <div class="metric"><p class="metric-label">Teuerstes Jahr</p><p class="metric-value" style="color:#E24B4A">${maxWY}</p><p class="metric-sub">${maxW.toLocaleString('de')} € (270 m³)</p></div>
+      <div class="metric"><p class="metric-label">Günstigstes Jahr</p><p class="metric-value" style="color:#1D9E75">${minWY}</p><p class="metric-sub">${minW.toLocaleString('de')} € (136 m³)</p></div>
+      <div class="metric"><p class="metric-label">Eff. Preis 2025</p><p class="metric-value">6,12 €/m³</p><p class="metric-sub">TW 3,21 + AW 2,90</p></div>`;
+  }
+  if(name==='detail') initDetail();
+}
+
+let dC={};
+function initDetail(){
+  ['d1','d_eur','d_bilanz','d_wasser','d2'].forEach(id=>{if(dC[id])dC[id].destroy()});
+  dC.d1=new Chart(document.getElementById('d1'),{type:'bar',data:{labels:[],datasets:[{label:'Strom',data:[],backgroundColor:'#185FA5',borderRadius:4},{label:'Solar',data:[],backgroundColor:'#BA7517',borderRadius:4}]},options:base()});
+  dC.d_eur=new Chart(document.getElementById('d_eur'),{type:'bar',data:{labels:[],datasets:[{label:'E — Solar1',data:[],backgroundColor:'#1D9E75',borderRadius:4,stack:'e'},{label:'O — Solar2',data:[],backgroundColor:'#5CC8A8',borderRadius:4,stack:'e'},{label:'I — Kfz',data:[],backgroundColor:'#0F6E56',borderRadius:4,stack:'e'}]},options:base(v=>v.toLocaleString('de')+' €')});
+  dC.d_bilanz=new Chart(document.getElementById('d_bilanz'),{type:'bar',data:{labels:[],datasets:[{label:'Kosten',data:[],backgroundColor:'#E24B4A',borderRadius:4},{label:'Erträge',data:[],backgroundColor:'#1D9E75',borderRadius:4}]},options:base(v=>v.toLocaleString('de')+' €')});
+  dC.d_wasser=new Chart(document.getElementById('d_wasser'),{type:'bar',data:{labels:[],datasets:[{label:'TW',data:[],backgroundColor:'#185FA5',borderRadius:4,stack:'w'},{label:'AW',data:[],backgroundColor:'#0F6E56',borderRadius:4,stack:'w'}]},options:base(v=>v.toLocaleString('de')+' €')});
+  dC.d2=new Chart(document.getElementById('d2'),{type:'bar',data:{labels:[],datasets:[{label:'Heizung',data:[],backgroundColor:'#993C1D',borderRadius:4}]},options:base()});
+  applyYear(2025);
+}
+
+function pctStr(c,p){if(c==null||p==null)return null;return((c-p)/p*100).toFixed(1);}
+function fmtPct(v,lbl,inv=false){if(v===null)return`<span class="metric-sub">kein Vorjahr</span>`;const s=parseFloat(v)>0?'+':'';const pos=inv?'pct-pos-inv':'pct-pos';const neg=inv?'pct-neg-inv':'pct-neg';return`<span class="metric-sub ${parseFloat(v)>0?pos:neg}">${s}${v}% vs ${lbl}</span>`;}
+function fmtE(v){return v!=null?v.toLocaleString('de',{minimumFractionDigits:0})+' €':'–';}
+
+function renderMetrics(yr,prev){
+  const d=DATA[yr],dp=DATA[prev];
+  const isEst=d.est===true;
+  const estBadge=isEst?` <span style="font-size:10px;color:var(--text3);font-weight:normal">e Schätzwert</span>`:'';
+  const et=(d.eurE||0)+(d.eurL||0)+(d.eurR||0);
+  const ep=dp?(dp.eurE||0)+(dp.eurL||0)+(dp.eurR||0):null;
+  const dk=(d.stromK||0)+d.heizK;
+  const dpk=dp?(dp.stromK||0)+dp.heizK:null;
+  const wk=d.wasserTW&&d.wasserAW?d.wasserTW+d.wasserAW:null;
+  const wpk=dp&&dp.wasserTW&&dp.wasserAW?dp.wasserTW+dp.wasserAW:null;
+  const saldo=et-dk;
+  const star=isEst?'*':'';
+  const items=[{e:'',l:'Netzbezug (K)',k:'strom',u:'kWh',inv:false},{e:'',l:'Haus gesamt (R+S)',k:'hausGes',u:'kWh',inv:false},{e:'',l:'ELW (S)',k:'stromElw',u:'kWh',inv:false},{e:'',l:'Solar gesamt',k:'solar',u:'kWh',inv:true},{e:'',l:'Heizung (W)',k:'heiz',u:'kWh',inv:false},{e:'',l:'Wasser (U)',k:'wasser',u:'m³',inv:false}];
+  // hausGes berechnen
+  if(!d.hausGes&&d.stromOhneElw&&d.stromElw) d.hausGes=d.stromOhneElw+d.stromElw;
+  if(!dp?.hausGes&&dp?.stromOhneElw&&dp?.stromElw) { if(dp) dp.hausGes=dp.stromOhneElw+dp.stromElw; }
+  let h=items.map(it=>{const val=d[it.k];const vs=val!=null?val.toLocaleString('de')+star+'&thinsp;'+it.u:'–';return`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">${it.l}</p><p class="metric-value">${vs}</p>${fmtPct(dp?pctStr(val,dp[it.k]):null,prev,it.inv)}</div>`;}).join('');
+  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">E — Solar1 Vergütung</p><p class="metric-value">${fmtE(d.eurE)}${star}</p>${dp?fmtPct(pctStr(d.eurE,dp.eurE),prev,true):'<span class="metric-sub">–</span>'}</div>`;
+  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">I — Kfz-Ladeabrechnung</p><p class="metric-value">${fmtE(d.eurL)}${star}</p>${dp?fmtPct(pctStr(d.eurL,dp.eurL),prev,true):'<span class="metric-sub">–</span>'}</div>`;
+  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">O — Solar2 Einspeisung</p><p class="metric-value">${fmtE(d.eurR)}${star}</p>${dp?fmtPct(pctStr(d.eurR,dp.eurR),prev,true):'<span class="metric-sub">–</span>'}</div>`;
+  h+=`<div class="metric eur-hl${isEst?' est-metric':''}"><p class="metric-label">€ Gesamt Ertrag</p><p class="metric-value" style="color:var(--info)">${fmtE(et)}${star}</p>${fmtPct(pctStr(et,ep),prev,true)}</div>`;
+  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">€ Strom-Kosten</p><p class="metric-value">${fmtE(d.stromK)}${star}</p>${dp?fmtPct(pctStr(d.stromK,dp.stromK),prev):'<span class="metric-sub">–</span>'}</div>`;
+  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">€ Heiz-Kosten</p><p class="metric-value">${fmtE(d.heizK)}</p><span class="metric-sub">Pellet-Ø</span></div>`;
+  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">Trinkwasser</p><p class="metric-value">${fmtE(d.wasserTW)}${star}</p>${dp?fmtPct(pctStr(d.wasserTW,dp.wasserTW),prev):'<span class="metric-sub">–</span>'}</div>`;
+  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">Abwasser</p><p class="metric-value">${fmtE(d.wasserAW)}${star}</p>${dp?fmtPct(pctStr(d.wasserAW,dp.wasserAW),prev):'<span class="metric-sub">–</span>'}</div>`;
+  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">Wasser gesamt</p><p class="metric-value">${fmtE(wk)}${star}</p>${dp?fmtPct(pctStr(wk,wpk),prev):'<span class="metric-sub">–</span>'}</div>`;
+  h+=`<div class="metric ${saldo>=0?'saldo-pos':'saldo-neg'}"><p class="metric-label">Energie-Saldo</p><p class="metric-value" style="color:${saldo>=0?'#1D9E75':'#E24B4A'}">${saldo>=0?'+':''}${saldo.toLocaleString('de')} €</p>${fmtPct(pctStr(saldo,dpk?et-dpk:null),prev)}</div>`;
+  document.getElementById('metrics').innerHTML=h;
+}
+
+function applyYear(yr){
+  if(!YEARS.includes(yr))return;
+  const idx=YEARS.indexOf(yr);const prev=idx>0?YEARS[idx-1]:null;
+  document.getElementById('year-input').value=yr;
+  document.getElementById('btn-prev').disabled=!prev;
+  document.getElementById('btn-next').disabled=idx===YEARS.length-1;
+  const y2=prev?[prev,yr]:[yr];const lbls=y2.map(String);
+  const isEstYear=DATA[yr].est===true;
+  const estBadge=isEstYear?' <span style="font-size:10px;color:var(--text3);font-weight:normal">e Schätzwert</span>':'';
+  document.getElementById('year-header').innerHTML=prev?`${prev} → ${yr}${estBadge}`:`${yr} (kein Vorjahr)${estBadge}`;
+  renderMetrics(yr,prev);
+  const bc=y2.map(y=>y===yr?null:'rgba(180,178,169,0.6)');
+  const upd=(ch,ds)=>{ch.data.labels=lbls;ds.forEach((d,i)=>{ch.data.datasets[i].data=d.data;ch.data.datasets[i].backgroundColor=d.bc;});ch.update();};
+  upd(dC.d1,[{data:y2.map(y=>DATA[y]?.strom??null),bc:y2.map((_,i)=>bc[i]??'#185FA5')},{data:y2.map(y=>DATA[y]?.solar??null),bc:y2.map((_,i)=>bc[i]??'#BA7517')}]);
+  upd(dC.d_eur,[{data:y2.map(y=>DATA[y]?.eurE??null),bc:y2.map((_,i)=>bc[i]??'#1D9E75')},{data:y2.map(y=>DATA[y]?.eurR??null),bc:y2.map((_,i)=>bc[i]??'#5CC8A8')},{data:y2.map(y=>DATA[y]?.eurL??null),bc:y2.map((_,i)=>bc[i]??'#0F6E56')}]);
+  upd(dC.d_bilanz,[{data:y2.map(y=>(DATA[y]?.stromK||0)+DATA[y]?.heizK),bc:y2.map((_,i)=>bc[i]??'#E24B4A')},{data:y2.map(y=>(DATA[y]?.eurE||0)+(DATA[y]?.eurL||0)+(DATA[y]?.eurR||0)),bc:y2.map((_,i)=>bc[i]??'#1D9E75')}]);
+  upd(dC.d_wasser,[{data:y2.map(y=>DATA[y]?.wasserTW??null),bc:y2.map((_,i)=>bc[i]??'#185FA5')},{data:y2.map(y=>DATA[y]?.wasserAW??null),bc:y2.map((_,i)=>bc[i]??'#0F6E56')}]);
+  upd(dC.d2,[{data:y2.map(y=>DATA[y]?.heiz??null),bc:y2.map((_,i)=>bc[i]??'#993C1D')}]);
+}
+
+function shiftYear(dir){const cur=parseInt(document.getElementById('year-input').value);const idx=YEARS.indexOf(cur);const n=idx+dir;if(n>=0&&n<YEARS.length)applyYear(YEARS[n]);}
+
+showTab('detail');chartsBuilt.detail=true;
+</script>
+</body>
+</html>
