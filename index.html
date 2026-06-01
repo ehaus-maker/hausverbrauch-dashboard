@@ -57,6 +57,7 @@ Chart.register(stackSumPlugin);
   *{box-sizing:border-box;margin:0;padding:0;}
   body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:20px;max-width:980px;margin:0 auto;}
   h1{font-size:20px;font-weight:600;margin-bottom:4px;}
+  .description{font-size:13px;color:var(--text);margin-bottom:3px;}
   .subtitle{font-size:13px;color:var(--text2);margin-bottom:4px;}
   .datasource{font-size:11px;color:var(--text3);margin-bottom:20px;}
   .tabs{display:flex;gap:6px;margin-bottom:1.5rem;flex-wrap:wrap;}
@@ -65,11 +66,11 @@ Chart.register(stackSumPlugin);
   .tab.active{background:var(--info);border-color:var(--info);color:#fff;font-weight:500;}
   .tab-content{display:none;}.tab-content.active{display:block;}
   .section-heading{font-size:15px;font-weight:600;margin-bottom:1rem;}
-  .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin-bottom:1.5rem;}
-  .metric{background:var(--bg2);border-radius:var(--radius);padding:12px 14px;}
-  .metric-label{font-size:12px;color:var(--text2);margin-bottom:4px;}
-  .metric-value{font-size:19px;font-weight:500;}
-  .metric-sub{font-size:11px;margin-top:2px;color:var(--text2);}
+  .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-bottom:1rem;}
+  .metric{background:var(--bg2);border-radius:var(--radius);padding:8px 10px;}
+  .metric-label{font-size:11px;color:var(--text2);margin-bottom:2px;}
+  .metric-value{font-size:16px;font-weight:500;}
+  .metric-sub{font-size:10px;margin-top:1px;color:var(--text2);}
   .pct-pos{color:var(--danger);}.pct-neg{color:var(--success);}
   .pct-pos-inv{color:var(--success);}.pct-neg-inv{color:var(--danger);}
   .chart-section{margin-bottom:1.8rem;}
@@ -102,6 +103,7 @@ Chart.register(stackSumPlugin);
 </head>
 <body>
 <h1>Hausverbrauch Dashboard</h1>
+<p class="description">Das Dashboard enthält alle Hausverbräuche welche über einen Zähler abgelesen werden können. Entsorgung, Grundsteuer, Abschreibungen werden nicht erfasst.</p>
 <p class="subtitle">Strom · Solar · Heizung · Wasser · Erträge · Energiebilanz — 2009 bis 2025</p>
 <p class="datasource">Datenquelle: Verbrauch_seit_2008.xlsx · Zählerwechsel Strom 8.6.2020 · Zählerwechsel Wasser 2014 &amp; 2022 · Pellet-Ø 3.358 kg/J · Pellets 4,9 kWh/kg · Scheitholz Buche/Eiche 1.800 kWh/rm</p>
 
@@ -335,7 +337,8 @@ const DATA={
   // 2025: korrigiert aus Belegen: stromK=3.073 (grüüün-Endabr.), wasser=127m³ (TWRS-Bescheid)
   //        eurR=2.711 (PV1 209,50 + PV2 2.501,24 — PV2 war bisher fehlend!)
   //        wasserTW/AW: TW 2,18 €/m³ netto, SW 3,18 €/m³ (neue Preise ab 2025 bestätigt)
-  2025:{strom:8198,stromOhneElw:16016,stromElw:662,solar:20170,solarD:4499,solarG:11346,solarJ:4325,heiz:27476,wasser:127,eurE:2501,eurL:2635,eurR:2711,stromK:3073,heizK:1046,wasserTW:527,wasserAW:452},
+  // eurR 2025: nur Solar2/e3dc Einspeisung (Spalte O) = 209,50 € — Solar1 ist bereits in eurE!
+  2025:{strom:8198,stromOhneElw:16016,stromElw:662,solar:20170,solarD:4499,solarG:11346,solarJ:4325,heiz:27476,wasser:127,eurE:2501,eurL:2635,eurR:210,stromK:3073,heizK:1046,wasserTW:527,wasserAW:452},
   // 2026: Aktualisiert mit Zwischenständen 31.05.2026 aus Excel
   // Solar2 (e3dc) F: 4.293 kWh Jan-Mai → linear *12/5 = ~10.303 kWh/Jahr
   // Solvis G: 42.384-40.701 = 1.683 kWh Jan-Mai → linear ~4.039 kWh/Jahr
@@ -575,21 +578,56 @@ function renderMetrics(yr,prev){
   const wpk=dp&&dp.wasserTW&&dp.wasserAW?dp.wasserTW+dp.wasserAW:null;
   const saldo=et-dk;
   const star=isEst?'*':'';
-  const items=[{e:'',l:'Netzbezug (K)',k:'strom',u:'kWh',inv:false},{e:'',l:'Haus gesamt (R+S)',k:'hausGes',u:'kWh',inv:false},{e:'',l:'ELW (S)',k:'stromElw',u:'kWh',inv:false},{e:'',l:'Solar gesamt',k:'solar',u:'kWh',inv:true},{e:'',l:'Heizung (W)',k:'heiz',u:'kWh',inv:false},{e:'',l:'Wasser (U)',k:'wasser',u:'m³',inv:false}];
-  // hausGes berechnen
   if(!d.hausGes&&d.stromOhneElw&&d.stromElw) d.hausGes=d.stromOhneElw+d.stromElw;
   if(!dp?.hausGes&&dp?.stromOhneElw&&dp?.stromElw) { if(dp) dp.hausGes=dp.stromOhneElw+dp.stromElw; }
-  let h=items.map(it=>{const val=d[it.k];const vs=val!=null?val.toLocaleString('de')+star+'&thinsp;'+it.u:'–';return`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">${it.l}</p><p class="metric-value">${vs}</p>${fmtPct(dp?pctStr(val,dp[it.k]):null,prev,it.inv)}</div>`;}).join('');
-  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">E — Solar1 Vergütung</p><p class="metric-value">${fmtE(d.eurE)}${star}</p>${dp?fmtPct(pctStr(d.eurE,dp.eurE),prev,true):'<span class="metric-sub">–</span>'}</div>`;
-  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">I — Kfz-Ladeabrechnung</p><p class="metric-value">${fmtE(d.eurL)}${star}</p>${dp?fmtPct(pctStr(d.eurL,dp.eurL),prev,true):'<span class="metric-sub">–</span>'}</div>`;
-  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">O — Solar2 Einspeisung</p><p class="metric-value">${fmtE(d.eurR)}${star}</p>${dp?fmtPct(pctStr(d.eurR,dp.eurR),prev,true):'<span class="metric-sub">–</span>'}</div>`;
-  h+=`<div class="metric eur-hl${isEst?' est-metric':''}"><p class="metric-label">€ Gesamt Ertrag</p><p class="metric-value" style="color:var(--info)">${fmtE(et)}${star}</p>${fmtPct(pctStr(et,ep),prev,true)}</div>`;
-  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">€ Strom-Kosten</p><p class="metric-value">${fmtE(d.stromK)}${star}</p>${dp?fmtPct(pctStr(d.stromK,dp.stromK),prev):'<span class="metric-sub">–</span>'}</div>`;
-  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">€ Heiz-Kosten</p><p class="metric-value">${fmtE(d.heizK)}</p><span class="metric-sub">Pellet-Ø</span></div>`;
-  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">Trinkwasser</p><p class="metric-value">${fmtE(d.wasserTW)}${star}</p>${dp?fmtPct(pctStr(d.wasserTW,dp.wasserTW),prev):'<span class="metric-sub">–</span>'}</div>`;
-  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">Abwasser</p><p class="metric-value">${fmtE(d.wasserAW)}${star}</p>${dp?fmtPct(pctStr(d.wasserAW,dp.wasserAW),prev):'<span class="metric-sub">–</span>'}</div>`;
-  h+=`<div class="metric${isEst?' est-metric':''}"><p class="metric-label">Wasser gesamt</p><p class="metric-value">${fmtE(wk)}${star}</p>${dp?fmtPct(pctStr(wk,wpk),prev):'<span class="metric-sub">–</span>'}</div>`;
-  h+=`<div class="metric ${saldo>=0?'saldo-pos':'saldo-neg'}"><p class="metric-label">Energie-Saldo</p><p class="metric-value" style="color:${saldo>=0?'#1D9E75':'#E24B4A'}">${saldo>=0?'+':''}${saldo.toLocaleString('de')} €</p>${fmtPct(pctStr(saldo,dpk?et-dpk:null),prev)}</div>`;
+
+  const m=(cls,label,val,pctVal,inv=false,sub='')=>{
+    const isE=isEst;
+    return`<div class="metric${isE?' est-metric':''} ${cls}"><p class="metric-label">${label}</p><p class="metric-value">${val}</p>${sub?`<span class="metric-sub">${sub}</span>`:fmtPct(pctVal,prev,inv)}</div>`;
+  };
+  const kwhVal=(k,inv=false)=>{const v=d[k];return{val:v!=null?v.toLocaleString('de')+star+'&thinsp;kWh':'–',pct:dp?pctStr(v,dp[k]):null,inv};};
+  const eurVal=(v,vp,inv=false)=>({val:v!=null?v.toLocaleString('de')+star+'&thinsp;€':'–',pct:vp!=null?pctStr(v,vp):null,inv});
+
+  const grp=(title)=>`<p style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin:.7rem 0 .2rem;grid-column:1/-1">${title}</p>`;
+
+  let h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px">';
+
+  // ── STROM (kWh) ──────────────────────────────────────────────────────────
+  h+=grp('Strom — kWh');
+  const s=kwhVal('strom'); h+=m('','Netzbezug (K)',s.val,s.pct,false);
+  const hg=kwhVal('hausGes'); h+=m('','Haus gesamt (R+S)',hg.val,hg.pct,false);
+  const el=kwhVal('stromElw'); h+=m('','ELW (S)',el.val,el.pct,false);
+
+  // ── SOLAR & HEIZUNG (kWh) ────────────────────────────────────────────────
+  h+=grp('Solar & Heizung — kWh');
+  const so=kwhVal('solar',true); h+=m('','Solar gesamt (D+F+H)',so.val,so.pct,true);
+  const hz=kwhVal('heiz'); h+=m('','Heizung (W)',hz.val,hz.pct,false);
+
+  // ── WASSER (m³) ──────────────────────────────────────────────────────────
+  h+=grp('Wasser — m³');
+  const wa=d.wasser;
+  h+=m('',`Verbrauch (U)`,wa!=null?wa.toLocaleString('de')+star+'&thinsp;m³':'–',dp?pctStr(wa,dp.wasser):null,false);
+
+  // ── ERTRÄGE (€) ──────────────────────────────────────────────────────────
+  h+=grp('Erträge — €');
+  const eE=eurVal(d.eurE,dp?.eurE,true); h+=m('','Solar1 Vergütung (E)',eE.val,eE.pct,true);
+  const eR=eurVal(d.eurR,dp?.eurR,true); h+=m('','Solar2 Einspeisung (O)',eR.val,eR.pct,true);
+  const eL=eurVal(d.eurL,dp?.eurL,true); h+=m('','Kfz-Ladeabrechnung (I)',eL.val,eL.pct,true);
+  const etV=eurVal(et,ep,true); h+=m('eur-hl',`<span style="color:var(--info)">Gesamt Ertrag (E+O+I)</span>`,`<span style="color:var(--info)">${et.toLocaleString('de')}${star}&thinsp;€</span>`,etV.pct,true);
+
+  // ── KOSTEN (€) ───────────────────────────────────────────────────────────
+  h+=grp('Kosten — €');
+  const skV=eurVal(d.stromK,dp?.stromK); h+=m('','Strom-Kosten (L)',skV.val,skV.pct,false);
+  const hkV=eurVal(d.heizK,dp?.heizK); h+=m('','Heiz-Kosten (AC)',hkV.val,hkV.pct,false,'Pellet-Ø');
+  const twV=eurVal(d.wasserTW,dp?.wasserTW); h+=m('','Trinkwasser (TWRS)',twV.val,twV.pct,false);
+  const awV=eurVal(d.wasserAW,dp?.wasserAW); h+=m('','Abwasser (EVS)',awV.val,awV.pct,false);
+  const wkV=eurVal(wk,wpk); h+=m('','Wasser gesamt (U)',wkV.val,wkV.pct,false);
+
+  // ── SALDO ────────────────────────────────────────────────────────────────
+  h+=grp('Bilanz');
+  h+=`<div class="metric ${saldo>=0?'saldo-pos':'saldo-neg'}"><p class="metric-label">Energie-Saldo (E+O+I−L−AC)</p><p class="metric-value" style="color:${saldo>=0?'#1D9E75':'#E24B4A'}">${saldo>=0?'+':''}${saldo.toLocaleString('de')}&thinsp;€</p>${fmtPct(pctStr(saldo,dpk?et-dpk:null),prev)}</div>`;
+
+  h+='</div>';
   document.getElementById('metrics').innerHTML=h;
 }
 
@@ -604,13 +642,30 @@ function applyYear(yr){
   const estBadge=isEstYear?' <span style="font-size:10px;color:var(--text3);font-weight:normal">e Schätzwert</span>':'';
   document.getElementById('year-header').innerHTML=prev?`${prev} → ${yr}${estBadge}`:`${yr} (kein Vorjahr)${estBadge}`;
   renderMetrics(yr,prev);
-  const bc=y2.map(y=>y===yr?null:'rgba(180,178,169,0.6)');
   const upd=(ch,ds)=>{ch.data.labels=lbls;ds.forEach((d,i)=>{ch.data.datasets[i].data=d.data;ch.data.datasets[i].backgroundColor=d.bc;});ch.update();};
-  upd(dC.d1,[{data:y2.map(y=>DATA[y]?.strom??null),bc:y2.map((_,i)=>bc[i]??'#185FA5')},{data:y2.map(y=>DATA[y]?.solar??null),bc:y2.map((_,i)=>bc[i]??'#BA7517')}]);
-  upd(dC.d_eur,[{data:y2.map(y=>DATA[y]?.eurE??null),bc:y2.map((_,i)=>bc[i]??'#1D9E75')},{data:y2.map(y=>DATA[y]?.eurR??null),bc:y2.map((_,i)=>bc[i]??'#5CC8A8')},{data:y2.map(y=>DATA[y]?.eurL??null),bc:y2.map((_,i)=>bc[i]??'#0F6E56')}]);
-  upd(dC.d_bilanz,[{data:y2.map(y=>(DATA[y]?.stromK||0)+DATA[y]?.heizK),bc:y2.map((_,i)=>bc[i]??'#E24B4A')},{data:y2.map(y=>(DATA[y]?.eurE||0)+(DATA[y]?.eurL||0)+(DATA[y]?.eurR||0)),bc:y2.map((_,i)=>bc[i]??'#1D9E75')}]);
-  upd(dC.d_wasser,[{data:y2.map(y=>DATA[y]?.wasserTW??null),bc:y2.map((_,i)=>bc[i]??'#185FA5')},{data:y2.map(y=>DATA[y]?.wasserAW??null),bc:y2.map((_,i)=>bc[i]??'#0F6E56')}]);
-  upd(dC.d2,[{data:y2.map(y=>DATA[y]?.heiz??null),bc:y2.map((_,i)=>bc[i]??'#993C1D')}]);
+  const isVorjahr=y2.length>1?[true,false]:[false];
+  // Vorjahr: gleiche Farbe wie Ist-Jahr, aber auf 35% Opacity abgeblendet
+  function dimColor(hex){return hex+'59';} // 59 = ~35% in hex
+  upd(dC.d1,[
+    {data:y2.map(y=>DATA[y]?.strom??null), bc:y2.map((_,i)=>isVorjahr[i]?dimColor('#185FA5'):'#185FA5')},
+    {data:y2.map(y=>DATA[y]?.solar??null), bc:y2.map((_,i)=>isVorjahr[i]?dimColor('#BA7517'):'#BA7517')}
+  ]);
+  upd(dC.d_eur,[
+    {data:y2.map(y=>DATA[y]?.eurE??null), bc:y2.map((_,i)=>isVorjahr[i]?dimColor('#1D9E75'):'#1D9E75')},
+    {data:y2.map(y=>DATA[y]?.eurR??null), bc:y2.map((_,i)=>isVorjahr[i]?dimColor('#5CC8A8'):'#5CC8A8')},
+    {data:y2.map(y=>DATA[y]?.eurL??null), bc:y2.map((_,i)=>isVorjahr[i]?dimColor('#0F6E56'):'#0F6E56')}
+  ]);
+  upd(dC.d_bilanz,[
+    {data:y2.map(y=>(DATA[y]?.stromK||0)+DATA[y]?.heizK), bc:y2.map((_,i)=>isVorjahr[i]?dimColor('#E24B4A'):'#E24B4A')},
+    {data:y2.map(y=>(DATA[y]?.eurE||0)+(DATA[y]?.eurL||0)+(DATA[y]?.eurR||0)), bc:y2.map((_,i)=>isVorjahr[i]?dimColor('#1D9E75'):'#1D9E75')}
+  ]);
+  upd(dC.d_wasser,[
+    {data:y2.map(y=>DATA[y]?.wasserTW??null), bc:y2.map((_,i)=>isVorjahr[i]?dimColor('#185FA5'):'#185FA5')},
+    {data:y2.map(y=>DATA[y]?.wasserAW??null), bc:y2.map((_,i)=>isVorjahr[i]?dimColor('#0F6E56'):'#0F6E56')}
+  ]);
+  upd(dC.d2,[
+    {data:y2.map(y=>DATA[y]?.heiz??null), bc:y2.map((_,i)=>isVorjahr[i]?dimColor('#993C1D'):'#993C1D')}
+  ]);
 }
 
 function shiftYear(dir){const cur=parseInt(document.getElementById('year-input').value);const idx=YEARS.indexOf(cur);const n=idx+dir;if(n>=0&&n<YEARS.length)applyYear(YEARS[n]);}
